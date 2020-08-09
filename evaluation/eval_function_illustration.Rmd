@@ -1,13 +1,12 @@
 ---
 title: "Evaluation Function Illustration"
-author: "Robert Schmidt - rschm"
-date: "8/8/2020"
+author: "Robert Schmidt"
 output:
+  pdf_document: default
   html_document:
     df_print: paged
     highlight: textmate
     number_sections: no
-  pdf_document: default
 header-includes:
 - \usepackage{amsmath}
 - \usepackage{array}
@@ -23,8 +22,6 @@ header-includes:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-
-setwd("~/Desktop/Projects/R_code")
 ```
 
 # Overview and basic modeling
@@ -51,8 +48,14 @@ find_corr(df, method.input = "hetcor") %>% head()
 ```
 
 It is evident that a number of the predictors are highly collinear.  
+We can also visualize this using `make_corrPlot`.
 
-Dodging this issue for now, I will run a basic regression of Salary against all predictors in the data frame.
+```{r, warning = FALSE, message = FALSE}
+make_corrPlot(df, col_labels = TRUE, var_clusters = 7)
+```
+
+
+Dodging this issue of collinearity for now, I will run a basic regression of Salary against all predictors in the data frame.
 
 ```{r}
 lm.fit = lm(Salary ~ ., data = df)
@@ -76,6 +79,7 @@ Again skirting the actual issue of model integrity, how do the predictions of a 
 
 ## Model evaluation
 ```{r}
+set.seed(1)
 df.clean = df[!is.na(df$Salary), ]
 N = nrow(df.clean)
 data_split = sample(N, 0.7*N, replace = FALSE)
@@ -101,9 +105,38 @@ RMSE_ntile(preds, test$Salary, n_percentile = 4)
 
 We see that the RMSE is worst on the highest 25% of the data.  
 
-If we plot the empirical cdfs of the predicted and actual salary, what is the maximum difference between the distributions?
+# Lasso fit
+The _Hitters_ dataset has a number of collinear predictors. Will a lasso regularization improve the fit?
 
-```{r, warning = FALSE}
-ks_eval(preds, test$Salary)
+```{r, warning = FALSE, message = FALSE}
+library(glmnet)
+
+train.matrix = model.matrix(Salary ~ ., train)[, -1]
+test.matrix = model.matrix(Salary ~ ., test)[, -1]
+grid = 10^seq(10, -2, length = 100)
+
+lasso.fit = glmnet(train.matrix, train$Salary, alpha = 1, lambda = grid)
+
+# Use CV to find the best lambda
+cv.out = cv.glmnet(train.matrix, train$Salary, alpha = 1)
+plot(cv.out)
+bestlam = cv.out$lambda.min
+
+preds = predict(lasso.fit, s = bestlam, test.matrix)
+RMSE(preds, test$Salary)
+```
+
+It appears that the lasso does improve the fit, if only marginally.  
+Of the original coefficients, which coefficients end up in the lasso fit?
+
+```{r}
+lasso.coefs = find_lasso_coefs(lasso.fit, bestlam)
+pct_lasso_coefs = round((nrow(lasso.coefs) - 1)/p, 5)*100
+
+print(paste0("The lasso kept ", pct_lasso_coefs, " % of the original predictors."))
+```
+
+```{r}
+lasso.coefs %>% filter(predictor != "(Intercept)")
 ```
 
