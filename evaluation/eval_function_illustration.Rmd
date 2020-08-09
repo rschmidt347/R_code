@@ -1,0 +1,109 @@
+---
+title: "Evaluation Function Illustration"
+author: "Robert Schmidt - rschm"
+date: "8/8/2020"
+output:
+  html_document:
+    df_print: paged
+    highlight: textmate
+    number_sections: no
+  pdf_document: default
+header-includes:
+- \usepackage{amsmath}
+- \usepackage{array}
+- \usepackage{amssymb}
+- \usepackage{multicol}
+- \usepackage{enumerate}
+- \DeclareMathOperator{\E}{\mathbb{E}}
+- \DeclareMathOperator{\Prob}{\mathbb{P}}
+- \DeclareMathOperator{\Var}{\mathrm{Var}}
+- \DeclareMathOperator{\Cov}{\mathrm{Cov}}
+- \newcommand{\matr}[1]{\mathbf{#1}}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+setwd("~/Desktop/Projects/R_code")
+```
+
+# Overview and basic modeling
+The following example illustrates the utility of the evaluation functions contained in `eval_functions.R`. I will employ the _Hitters_ dataset from the `ISLR` library.
+
+```{r, message = FALSE, warning = FALSE}
+source("eval_functions.R")
+library(ISLR)
+
+df = Hitters
+str(df)
+```
+
+```{r}
+N = nrow(df); p = ncol(df) - 1
+print(paste0("There are ", N, " rows and ", p, " predictors in the Hitters dataset."))
+```
+
+## Correlation, VIF, and significance
+We see that the _Hitters_ dataset has a variety of predictor types, including a few factor variables. Let us employ the `find_corr` function to see which predictors are the most highly correlated, accounting for the different predictor types.
+
+```{r, warning = FALSE}
+find_corr(df, method.input = "hetcor") %>% head()
+```
+
+It is evident that a number of the predictors are highly collinear.  
+
+Dodging this issue for now, I will run a basic regression of Salary against all predictors in the data frame.
+
+```{r}
+lm.fit = lm(Salary ~ ., data = df)
+```
+
+What are the most significant predictors at a 0.05 cutoff?
+
+```{r}
+find_sig_vars(lm.fit, sig.cutoff = 0.05) %>% arrange(p_val)
+```
+
+We see that a number of predictors are highly significant, although the significance is questionable given the degree of collinearity in the dataset. To address this, let's check the VIF of this basic linear regression.
+
+```{r}
+find_VIF(lm.fit) %>% head()
+```
+
+These VIFs are explosively large! Anything above 10 is considered problematic, and these are in the hundreds.  
+Again skirting the actual issue of model integrity, how do the predictions of a linear model fare against the actual values? Some of the salaries have missing values - since this exercise is just meant to illustrate the utility of the evaluation functions, I will remove these from the dataset.
+
+
+## Model evaluation
+```{r}
+df.clean = df[!is.na(df$Salary), ]
+N = nrow(df.clean)
+data_split = sample(N, 0.7*N, replace = FALSE)
+train = df.clean[data_split, ]
+test = df.clean[-data_split, ]
+
+lm.fit = lm(Salary ~ ., data = train)
+preds = predict(lm.fit, test)
+RMSE(preds, test$Salary)
+```
+
+We can also consider the distribution of the actual vs. predicted salaries:
+
+```{r}
+dist_eval(preds, test$Salary)
+```
+
+How does the model fare at different quartiles of the actual salary?
+
+```{r}
+RMSE_ntile(preds, test$Salary, n_percentile = 4)
+```
+
+We see that the RMSE is worst on the highest 25% of the data.  
+
+If we plot the empirical cdfs of the predicted and actual salary, what is the maximum difference between the distributions?
+
+```{r, warning = FALSE}
+ks_eval(preds, test$Salary)
+```
+

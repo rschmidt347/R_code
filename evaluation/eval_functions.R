@@ -8,6 +8,7 @@ library(corrplot) # correlation plots
 library(polycor) # for non-continuous variable correlations
 library(caret) # pre-defined evaluation functions
 library(data.table) # for fast df manipulation
+library(car) # vif
 
 
 # Variable correlations ####
@@ -68,16 +69,21 @@ make_corrPlot = function(df, col_labels = FALSE, text_vert_angle = 60, text_size
 }
 
 # Function: find correlations of input and "flatten"/rank them in descending order
-find_corr = function(input, method.input = "pearson") {
+find_corr = function(input, method.input) {
   # Input: df and method of correlation
   # Output: pairwise correlations, sorted in descending order by absolute value
   
-  corr_matrix = cor(input, method = method.input)
+  if (method.input == "pearson" | method.input == "spearman") {
+    corr_matrix = cor(input, method = method.input)
+  } else if (method.input == "hetcor") {
+    corr_matrix = hetcor(input)$correlations
+  }
+  
   corr_matrix[lower.tri(corr_matrix, diag = TRUE)] = NA
   corr_matrix = as.data.frame(as.table(corr_matrix))
   corr_matrix = na.omit(corr_matrix)
   corr_matrix = corr_matrix[order(-abs(corr_matrix$Freq)), ]
-  names(corr_matrix = c("predictor_1", "predictor_2", "correlation"))
+  names(corr_matrix) = c("predictor_1", "predictor_2", "correlation")
   corr_matrix
 }
 
@@ -144,6 +150,8 @@ RMSE_ntile = function(preds, actual, n_percentile = 4) {
     df.perf[i, ]$test_RMSE = RMSE(df.pctile$preds, df.pctile$actual)
   }
   
+  names(df.perf) = c("ntile", "test_RMSE")
+  
   return(df.perf)
 }
 
@@ -153,8 +161,8 @@ ks_eval = function(sample_1, sample_2) {
   # Output: plot of KS test and the KS test statistic
   # Note: can be useful to see the max distributional difference between predicted and actual model
   
-  group = c(rep("sample_1"), length(preds),
-            rep("sample_2"), length(actual))
+  group = c(rep("sample_1", length(sample_1)),
+            rep("sample_2", length(sample_2)))
   
   df = data.frame(KSD = c(sample_1, sample_2), group = group)
   
@@ -190,7 +198,7 @@ ks_eval = function(sample_1, sample_2) {
 }
 
 # Function: plot the distributions of prediction vs. actual response
-dist_eval = function(preds, actual, dist_names = c("preds, actual"),
+dist_eval = function(preds, actual, dist_names = c("preds", "actual"),
                      x_scale = range(actual), line_size = 0.7, plot_alpha = 0.2, use_hist = FALSE,
                      x_label = "Response variable", plot_title = "Difference in distribution",
                      hist_bins = 100) {
@@ -226,10 +234,10 @@ find_sig_vars = function(fit, sig.cutoff = 1) {
   # Input: fit and cutoff for significance (if wanted)
   # Output: variable significance as df
   
-  sig.df = data.frame(summary(fit)$coef)
+  sig.df = data.frame(summary(fit)$coeff)
   
   sig.df$var_names = rownames(sig.df)
-  rownames(sig.df) = seq(1:nrow(df))
+  rownames(sig.df) = seq(1:nrow(sig.df))
   
   sig.df = sig.df[, c(5, 1, 2, 3, 4)]
   sig.df = format(sig.df, scientific = FALSE)
