@@ -1,2 +1,2 @@
 # R_code
-R code from my previous projects: a mix of exercises and commonly-used functions.
+R exercises and commonly-used functions.
